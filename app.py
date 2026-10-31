@@ -1,182 +1,192 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+import html
 
 st.set_page_config(
-    page_title="Blue Economy × Lean | Decision Support",
+    page_title="Blue Economy × Lean Decision Support",
     page_icon="🌊",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 DATA_FILE = Path(__file__).with_name("Portal.xlsx")
 
 st.markdown("""
 <style>
-    .block-container {padding-top: 2rem; padding-bottom: 3rem; max-width: 1280px;}
-    .hero {
-        padding: 1.5rem 1.7rem;
-        border-radius: 18px;
-        background: linear-gradient(120deg, #0b3954 0%, #087e8b 62%, #38a3a5 100%);
-        color: white;
-        margin-bottom: 1.25rem;
-    }
-    .hero h1 {color: white; font-size: 2.05rem; margin: 0 0 .45rem 0;}
-    .hero p {color: #e9fbff; font-size: 1rem; margin: 0; line-height: 1.5;}
-    .section-label {
-        font-size: .78rem; font-weight: 700; letter-spacing: .08em;
-        text-transform: uppercase; color: #64748b; margin-bottom: .35rem;
-    }
-    .result-card {
-        border: 1px solid rgba(128, 145, 164, .30);
-        border-radius: 14px; padding: 1rem 1.05rem;
-        min-height: 125px; background: rgba(128, 145, 164, .045);
-    }
-    .result-card h3 {font-size: 1rem; margin: .3rem 0 .55rem 0;}
-    .result-card p {margin: 0; font-size: .96rem; line-height: 1.45;}
-    .path-step {
-        border-radius: 12px; padding: .85rem 1rem; margin-bottom: .4rem;
-        border: 1px solid rgba(128,145,164,.25);
-    }
-    .small-muted {font-size: .84rem; opacity: .75;}
-    div[data-testid="stMetric"] {
-        border: 1px solid rgba(128,145,164,.25);
-        padding: .8rem 1rem; border-radius: 12px;
-        background: rgba(128,145,164,.04);
-    }
-    [data-testid="stSidebar"] {border-right: 1px solid rgba(128,145,164,.2);}
+.block-container {max-width: 1180px; padding-top: 2rem; padding-bottom: 3rem;}
+.hero {
+    background: linear-gradient(120deg, #0b3954 0%, #087e8b 65%, #38a3a5 100%);
+    border-radius: 18px; padding: 1.7rem 1.8rem; color: white; margin-bottom: 1.5rem;
+}
+.hero h1 {color: white; margin: 0 0 .45rem 0; font-size: 2.1rem;}
+.hero p {color: #e9fbff; margin: 0; font-size: 1rem; line-height: 1.55;}
+.eyebrow {font-size: .76rem; font-weight: 750; letter-spacing: .13em; margin-bottom: .6rem;}
+.impact-note {color: #64748b; font-size: .95rem; margin-bottom: 1.2rem;}
+div.stButton > button {
+    width: 100%; min-height: 94px; white-space: normal; text-align: left;
+    border-radius: 14px; border: 1px solid rgba(100,116,139,.35);
+    padding: 1rem 1.1rem; font-size: 1.05rem; font-weight: 650;
+}
+div.stButton > button:hover {border-color: #159a9c; color: #159a9c;}
+.practice-card {
+    border: 1px solid rgba(100,116,139,.30); border-radius: 14px;
+    padding: 1rem 1.1rem; margin-bottom: .5rem;
+    background: rgba(128,145,164,.045);
+}
+.tag {font-size: .75rem; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; color: #64748b;}
+.challenge {
+    border-left: 4px solid #d9912b; border-radius: 8px;
+    padding: .8rem 1rem; margin: .5rem 0;
+    background: rgba(217,145,43,.08);
+}
+.lean {
+    border-left: 4px solid #8064b5; border-radius: 8px;
+    padding: .8rem 1rem; margin: .5rem 0;
+    background: rgba(128,100,181,.08);
+}
 </style>
 """, unsafe_allow_html=True)
 
-
 @st.cache_data
-def load_data(file_path):
-    data = pd.read_excel(file_path)
+def load_data(path):
+    data = pd.read_excel(path)
     data.columns = [str(c).strip() for c in data.columns]
     required = ["Impact", "Practice", "Challenge", "Lean P."]
     missing = [c for c in required if c not in data.columns]
     if missing:
-        raise ValueError(
-            "Missing required Excel columns: " + ", ".join(missing)
-            + ". Expected columns: Impact, Practice, Challenge, Lean P."
-        )
+        raise ValueError("Portal.xlsx must contain columns: Impact, Practice, Challenge, Lean P.")
     data = data[required].copy()
     for col in required:
-        data[col] = data[col].astype("string").str.strip()
-        data[col] = data[col].replace("", pd.NA)
+        data[col] = data[col].astype("string").str.strip().replace("", pd.NA)
     return data.dropna(subset=required).drop_duplicates().reset_index(drop=True)
-
 
 try:
     df = load_data(DATA_FILE)
 except Exception as exc:
-    st.error(f"Unable to load Portal.xlsx: {exc}")
-    st.info("Make sure Portal.xlsx is in the same repository folder as app.py.")
+    st.error(f"Could not load Portal.xlsx: {exc}")
     st.stop()
 
 if df.empty:
-    st.warning("No complete relationship records were found in Portal.xlsx.")
+    st.warning("No complete relationships were found in Portal.xlsx.")
     st.stop()
 
-# Header
-st.markdown("""
-<div class="hero">
-  <div style="font-size:.8rem; font-weight:700; letter-spacing:.12em; margin-bottom:.55rem;">
-    BLUE ECONOMY &nbsp;×&nbsp; LEAN CONSTRUCTION
-  </div>
-  <h1>Decision Support Platform</h1>
-  <p>Explore how impacts connect to mitigation practices, implementation challenges, and relevant Lean principles.</p>
-</div>
-""", unsafe_allow_html=True)
+# Navigation state: landing -> selected impact -> selected practice detail
+if "selected_impact" not in st.session_state:
+    st.session_state.selected_impact = None
+if "selected_practice" not in st.session_state:
+    st.session_state.selected_practice = None
 
-with st.sidebar:
-    st.markdown("## Explore the framework")
-    st.caption("Start with an impact. The options below will update to show only related findings.")
-    impact_options = sorted(df["Impact"].unique().tolist())
-    selected_impact = st.selectbox("1 · Select an impact", impact_options)
-    impact_df = df[df["Impact"] == selected_impact].copy()
-    practice_options = sorted(impact_df["Practice"].unique().tolist())
-    selected_practice = st.selectbox(
-        "2 · Select a practice",
-        ["All related practices"] + practice_options,
-    )
-    if selected_practice != "All related practices":
-        filtered_df = impact_df[impact_df["Practice"] == selected_practice].copy()
-    else:
-        filtered_df = impact_df.copy()
+def reset_home():
+    st.session_state.selected_impact = None
+    st.session_state.selected_practice = None
 
-    st.divider()
-    st.markdown("**About this tool**")
-    st.caption("This application presents relationships recorded in the research dataset. It does not generate or validate new relationships.")
+def show_impacts():
+    st.markdown("""
+    <div class="hero">
+      <div class="eyebrow">BLUE ECONOMY × LEAN CONSTRUCTION</div>
+      <h1>Decision Support Platform</h1>
+      <p>Select an impact to explore the Blue Economy practices that may mitigate it, the challenges linked to those practices, and the associated Lean principles.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown("## Select an impact")
+    st.markdown('<div class="impact-note">Choose one of the impacts below to view its related practices.</div>', unsafe_allow_html=True)
+    impacts = sorted(df["Impact"].unique().tolist())
+    # Show only impacts on the landing page.
+    cols = st.columns(2)
+    for i, impact in enumerate(impacts):
+        with cols[i % 2]:
+            n_practices = df.loc[df["Impact"] == impact, "Practice"].nunique()
+            if st.button(f"🎯  {impact}\n\nExplore {n_practices} related practice(s)  →", key=f"impact_{impact}"):
+                st.session_state.selected_impact = impact
+                st.session_state.selected_practice = None
+                st.rerun()
 
-# Summary metrics
-st.markdown(f"### Selected impact: `{selected_impact}`")
-m1, m2, m3 = st.columns(3)
-m1.metric("Related practices", filtered_df["Practice"].nunique())
-m2.metric("Implementation challenges", filtered_df["Challenge"].nunique())
-m3.metric("Lean principles", filtered_df["Lean P."].nunique())
+def show_practices(impact):
+    top_left, top_right = st.columns([1, 5])
+    with top_left:
+        if st.button("← All impacts", key="back_impacts"):
+            reset_home()
+            st.rerun()
+    st.markdown(f"""
+    <div class="hero">
+      <div class="eyebrow">SELECTED IMPACT</div>
+      <h1>{html.escape(str(impact))}</h1>
+      <p>Explore the practices associated with this impact. Select a practice to see its challenges and linked Lean principles.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    subset = df[df["Impact"] == impact]
+    practices = sorted(subset["Practice"].unique().tolist())
+    st.markdown("## Related Blue Economy practices")
+    cols = st.columns(2)
+    for i, practice in enumerate(practices):
+        p_df = subset[subset["Practice"] == practice]
+        n_challenges = p_df["Challenge"].nunique()
+        n_lean = p_df["Lean P."].nunique()
+        with cols[i % 2]:
+            st.markdown('<div class="practice-card">', unsafe_allow_html=True)
+            st.markdown(f'<div class="tag">BLUE ECONOMY PRACTICE</div><h3>{html.escape(str(practice))}</h3><p>{n_challenges} linked challenge(s) · {n_lean} Lean principle(s)</p>', unsafe_allow_html=True)
+            if st.button(f"Explore {practice}  →", key=f"practice_{impact}_{practice}"):
+                st.session_state.selected_practice = practice
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown("---")
-st.markdown("### Explore the mitigation pathway")
-st.caption("Choose a challenge to see its linked practice or practices and associated Lean principle(s).")
+def show_practice_detail(impact, practice):
+    a, b = st.columns([1, 1])
+    with a:
+        if st.button("← Back to practices", key="back_practices"):
+            st.session_state.selected_practice = None
+            st.rerun()
+    with b:
+        if st.button("⌂ All impacts", key="back_home_detail"):
+            reset_home()
+            st.rerun()
 
-challenge_options = sorted(filtered_df["Challenge"].unique().tolist())
-if not challenge_options:
-    st.info("No linked challenges are available for this selection.")
-    st.stop()
+    subset = df[(df["Impact"] == impact) & (df["Practice"] == practice)]
+    st.markdown(f"""
+    <div class="hero">
+      <div class="eyebrow">IMPACT: {html.escape(str(impact))}</div>
+      <h1>{html.escape(str(practice))}</h1>
+      <p>Review the implementation challenges associated with this practice and the Lean principles linked to each challenge in the research dataset.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-selected_challenge = st.selectbox("3 · Select an implementation challenge", challenge_options)
-challenge_df = filtered_df[filtered_df["Challenge"] == selected_challenge].copy()
-linked_practices = sorted(challenge_df["Practice"].unique().tolist())
-linked_principles = sorted(challenge_df["Lean P."].unique().tolist())
+    st.markdown("### Implementation challenges and Lean principles")
+    # Preserve the exact row-level relationships; group principles for repeated challenge entries.
+    grouped = subset.groupby("Challenge", sort=True)["Lean P."].agg(
+        lambda values: sorted(set(str(v) for v in values))
+    ).reset_index()
 
-# Four connected visual cards
-c1, c2, c3, c4 = st.columns([1, .22, 1, 1.15])
-with c1:
-    st.markdown('<div class="result-card" style="border-top:4px solid #1783a5;">'
-                '<div class="section-label">01 · Impact</div>'
-                f'<h3>{selected_impact}</h3>'
-                '<p class="small-muted">Selected issue to mitigate</p></div>', unsafe_allow_html=True)
-with c2:
-    st.markdown("<div style='text-align:center; padding-top:3.1rem; font-size:1.4rem;'>→</div>", unsafe_allow_html=True)
-with c3:
-    practice_text = "<br>".join("• " + str(x) for x in linked_practices)
-    st.markdown('<div class="result-card" style="border-top:4px solid #299764;">'
-                '<div class="section-label">02 · Practice</div>'
-                f'<p>{practice_text}</p></div>', unsafe_allow_html=True)
-with c4:
-    challenge_text = str(selected_challenge)
-    st.markdown('<div class="result-card" style="border-top:4px solid #d9912b;">'
-                '<div class="section-label">03 · Challenge</div>'
-                f'<h3>{challenge_text}</h3></div>', unsafe_allow_html=True)
+    for _, row in grouped.iterrows():
+        challenge = str(row["Challenge"])
+        principles = row["Lean P."]
+        left, right = st.columns([1.15, 1])
+        with left:
+            st.markdown('<div class="challenge"><div class="tag">IMPLEMENTATION CHALLENGE</div>'
+                        f'<h4>{html.escape(challenge)}</h4></div>', unsafe_allow_html=True)
+        with right:
+            st.markdown('<div class="lean"><div class="tag">ASSOCIATED LEAN PRINCIPLES</div>'
+                        + "".join(f"<p>• {html.escape(p)}</p>" for p in principles)
+                        + "</div>", unsafe_allow_html=True)
 
-st.markdown("")
-st.markdown("#### 04 · Associated Lean principles")
-principle_cols = st.columns(min(3, max(1, len(linked_principles))))
-for i, principle in enumerate(linked_principles):
-    with principle_cols[i % len(principle_cols)]:
-        st.markdown(
-            '<div class="result-card" style="border-top:4px solid #8064b5; min-height:90px;">'
-            f'<div class="section-label">Lean principle</div><h3>{principle}</h3></div>',
-            unsafe_allow_html=True
+    with st.expander("View the underlying research records"):
+        st.dataframe(
+            subset.rename(columns={
+                "Impact": "Impact",
+                "Practice": "Blue Economy practice",
+                "Challenge": "Implementation challenge",
+                "Lean P.": "Lean principle",
+            }),
+            use_container_width=True,
+            hide_index=True,
         )
 
-st.markdown("---")
-with st.expander("View the underlying relationship records"):
-    st.caption("These rows are taken directly from your Excel dataset.")
-    st.dataframe(
-        filtered_df.rename(columns={
-            "Impact": "Impact code",
-            "Practice": "Blue Economy practice",
-            "Challenge": "Implementation challenge",
-            "Lean P.": "Lean principle",
-        }),
-        use_container_width=True,
-        hide_index=True,
-    )
+if st.session_state.selected_impact is None:
+    show_impacts()
+elif st.session_state.selected_practice is None:
+    show_practices(st.session_state.selected_impact)
+else:
+    show_practice_detail(st.session_state.selected_impact, st.session_state.selected_practice)
 
-st.markdown(
-    '<p class="small-muted" style="text-align:center; padding-top:1rem;">'
-    'Blue Economy × Lean Construction · Research decision-support prototype</p>',
-    unsafe_allow_html=True
-)
+st.markdown("---")
+st.caption("Research decision-support prototype · Displays relationships recorded in Portal.xlsx; it does not invent new relationships.")
